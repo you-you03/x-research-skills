@@ -141,59 +141,66 @@ function buildPrompt(input: {
   days: number;
   nowIso: string;
 }): string {
-  const localeLine =
+  const now = new Date(input.nowIso);
+  const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const todayStr = now.toISOString().split("T")[0];
+  const yesterdayStr = yesterday.toISOString().split("T")[0];
+  const hours = input.days * 24;
+  const count = 10;
+
+  const localeBlock =
     input.locale === "ja"
-      ? "検索・収集は日本語圏を優先（日本語で読める一次情報や日本語で拡散している情報）。必要なら英語一次情報も併用。"
-      : "検索・収集はグローバル一次情報（英語中心）を優先。日本語圏の派生/解説も拾ってよい。";
+      ? "\n- 対象言語: 日本語優先（日本のトレンド）"
+      : "\n- 対象言語: 英語/グローバル優先";
 
-  const audienceLine =
+  const modeBlock =
     input.audience === "engineer"
-      ? "読者はエンジニア寄り。実装・運用・制約（レート/コスト/権限）を厚めに。"
+      ? "\n- 視点: エンジニア視点（技術詳細、実装、DevTools）"
       : input.audience === "investor"
-        ? "読者は投資家寄り。評価軸（コスト/優位性/リスク/規約）を厚めに。ただし投資助言はしない。"
-        : "読者は投資家+エンジニア。両方に通じる共通言語（運用/再現性/コスト/監査）で整理。";
+        ? "\n- 視点: 投資家視点（市場、資金調達、トークン）"
+        : "\n- 視点: エンジニアと投資家の両方";
 
-  return `日本語で回答して。
+  const mustBlock = input.goal ? `\n- 重点テーマ: ${input.goal}` : "";
+  const seedBlock = ""; // seed is not currently exposed in args
 
-目的: ${input.goal}
-トピック: ${input.topic}
-時点: ${input.nowIso}
-検索窓の目安: 直近${input.days}日（ただし仕様/規約/料金は最新を優先）
-
+  return `
+目的: X(Twitter)でimpressionsを最大化するための投稿ネタ出し。
 前提:
-- ${localeLine}
-- ${audienceLine}
-- 数字/仕様/制限は捏造しない。不明は unknown と書く。
-- 仕様/価格/レート等は変更され得るので、必ず「As of（参照日）」を付ける。
-- 長文の直接引用はしない（要旨で）。
-- 投資助言に見える表現は禁止（買い/売り推奨、価格目標、倍化など）。
-- 重要: Primary Sources は「公式ドキュメント/公式ブログ/仕様/規約/料金/公式GitHub」など、X投稿以外のURLにする。X投稿URLは Secondary としてのみ可。
-- 出力に専用タグ（render_inline_citation など）を入れない。URLは素のURLで書く。
+- アカウント: 個人発信
+- 想定読者: 投資家 + エンジニア
+- 領域: ${input.topic}
+- 文体: 常体、ストーリー薄め、結論先出し
+- 期間: 「昨日と今日」= ${yesterdayStr} と ${todayStr}（直近 ${hours} 時間を目安）${localeBlock}${modeBlock}${mustBlock}${seedBlock}
 
-やること:
-1) x_search を使って一次情報（公式ドキュメント/仕様/規約/料金/公式ブログ/公式GitHub）を最優先で集める
-2) 次に実装例（GitHub、SDK、サンプル）を集める
-3) 反論/注意点を最低1つ作る（例: レート制限、コスト爆発、偏り、ポリシー違反、セキュリティ）
-4) 記事が深くなる要素を最低2つ作る:
-   - 用語の定義（誤解を潰す）
-   - datedな数字（レート/料金/制約など）
-   - 実装の最小構成（必要な権限、保存形式、ログ）
+やること（重要: 空気を拾うための探索手順）:
+1) まず「広く薄く」探索して、タイムラインの空気（論点のクラスター）を抽出する:
+   - seed が無い場合: AI/Web3/開発者ツール文脈に対して、広めのクエリを12個以上自分で作って X 検索する
+   - 収集した投稿から「繰り返し出てくる固有名詞/機能名/言い回し」を抽出し、3-5クラスターにまとめる（単発の話題はクラスターにしない）
+   - さらに、上で抽出した「繰り返し出てくる機能名/短いフレーズ」を2-5個選び、それをクエリとして追加検索して補強する（これで"Agent Teams"のような空気が自然に取れる）
+   - 可能ならXの検索オペレータを使って「バズ」を拾う（例: min_faves:500, min_retweets:100, since:YYYY-MM-DD）。使えない場合は、その旨を明記して代替手段（候補を多めに拾って上位を選ぶ）に切り替える
+2) 次に、クラスターごとに代表ポストを2つずつ選ぶ（長文の直接引用はしない）。
+3) その後、合計${count}件の「素材」を出す（AIとWeb3は偏らせない）。
+4) 各素材ごとに以下を必ず出す:
+- url（Xの投稿URL。無ければ一次情報URL）
+- 要約（1-2行、自分の言葉）
+- エンゲージ指標（観測できたものだけ。例: likes=?, retweets=?, replies=?, views=?。不明は unknown）
+- なぜ伸びたか（仮説を3つまで）
+- ここから作れる投稿ネタ案（投資家向け1つ、エンジニア向け1つ）
+- フック案（1行を3つ）
+- 注意（断定/投資助言に見えない言い回しへ調整点があれば1行）
 
-出力形式（Markdown、以下の見出しを必ず含める）:
-- Meta（Timestamp, Topic, Audience, Voice）
-- Topic (1 sentence)
-- Why Now (3 bullets)
-- Key Questions (5-8)
-- Terminology / Definitions（Source付き）
-- Primary Sources（URL）
-- Secondary Sources（URL）
-- Contrasts / Counterpoints（Evidence付き）
-- Data Points (dated)（As of, Source付き）
-- What We Can Safely Say / What We Should Not Say
-- Suggested Angles (3)
-- Outline Seeds (3-6 headings)
-- Sources (URL list)
-`;
+追加の要求（空気感を出す）:
+- 最初に「タイムラインの空気（論点のクラスター）」を3-5個、各クラスターに代表ポストURLを2つずつ付ける
+- その上で「投稿者が使っている言い回し/キーフレーズ」を各クラスターにつき2-3個（そのまま引用せず、短い言い換えで）
+- 不確かなゴシップは避け、一次情報/公式発表/本人発言を優先する。裏が取れない場合は「未確認」と明記する
+- 投資助言に見える表現は禁止（買い/売り推奨、株価や価格の目標・倍化など）。投資家向けネタ案は「論点/評価軸/事業インパクト」の形で書く
+
+出力形式:
+- 最初に「タイムラインの空気（論点のクラスター）」を箇条書き
+- 次に「今日の結論（狙うべき3テーマ）」を箇条書き
+- 次に「素材一覧」を番号付きで${count}件
+- 最後に url だけの一覧をまとめて
+`.trim();
 }
 
 async function postJson(
